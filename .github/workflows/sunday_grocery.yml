@@ -1,12 +1,12 @@
-name: Sunday Life Ops Agent
+name: Daily Life Ops Agent
 
 on:
   schedule:
-    - cron: '0 7 * * 0' # Every Sunday at 07:00 UTC
+    - cron: '0 6 * * *'
   workflow_dispatch:
 
 jobs:
-  run-agent:
+  run-daily-agent:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,13 +19,10 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
-      - name: Create Service Account Key File
-        run: |
-          echo '${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}' > service_account.json
-
-      - name: Run Sunday Agent
+      - name: Run Main Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
         run: python main.py
