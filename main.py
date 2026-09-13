@@ -164,9 +164,17 @@ STRUCTURE:
    - Suggest dinner timing and high-protein meal options based on Jake's athletic finishes.
 
 3. <b>🛒 SUNDAY GROCERY LIST</b> (ONLY INCLUDE IF DAY OF WEEK IS SUNDAY)
-   - Categorize by aisle: Produce, Protein, Dairy, Pantry based on the week ahead.
+   Analyze the next 7 days on the calendar to determine who is home on which days (checking if Amy is away or if Jake has travel/eating out plans). 
+   Then generate a COMPLETE weekly grocery list covering:
+   
+   • <b>Meal Plan Overview:</b> Briefly list 4-5 planned dinners (scaled for 2 people when Amy is home, 1 person when solo) and quick WFH lunches for Jake.
+   • <b>Produce:</b> Bananas, grapes, berries, salad greens, cooking veggies (broccoli, peppers, onions), sweet potatoes, fresh herbs.
+   • <b>Protein & Meats:</b> Chicken breasts/thighs, mince, fish fillets, eggs, deli meat/salmon for lunches.
+   • <b>Dairy & Chilled:</b> Milk, Greek yogurt, cheeses, hummus/dips.
+   • <b>Pantry & Bakery:</b> Lunch wraps/bread, rice, pasta, oats, high-protein snacks, nuts, electrolyte tablets.
+   • <b>Snacks & Fruit:</b> Bananas, grapes, snack bars, rice cakes, dark chocolate.
 
-Keep it concise, clear, and cleanly formatted for mobile reading.
+Keep it structured, comprehensive, and formatted using Telegram HTML.
 """
 
     response = client.models.generate_content(
