@@ -2,31 +2,22 @@ import os
 import sys
 import json
 from datetime import datetime, timedelta
+import zoneinfo
 import requests
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from google import genai
 
 # ==========================================
-# 1. CONFIGURATION & LOCATION (Rest Bay)
+# 1. CONFIGURATION
 # ==========================================
-LATITUDE = 51.4820
-LONGITUDE = -3.7025
-SOLO_LEAD_TIME_MINS = 155   # Poole -> Rest Bay + prep
-GROUP_LEAD_TIME_MINS = 165  # Poole -> Corfe Mullen -> Rest Bay + prep
-CORFE_PICKUP_OFFSET_MINS = 15
-
-# Telegram & Gemini Secrets
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # ==========================================
-# 2. GOOGLE CALENDAR FETCHER
+# 2. GOOGLE CALENDAR FETCHER (UK TIMEZONE)
 # ==========================================
-from datetime import datetime, timedelta
-import zoneinfo
-
 def fetch_calendar_events():
     """Reads events from multiple Google Calendars and converts times to UK Local Time."""
     service_account_info = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
@@ -42,7 +33,7 @@ def fetch_calendar_events():
                 "service_account.json", scopes=["https://www.googleapis.com/auth/calendar.readonly"]
             )
         else:
-            print("Warning: No Google credentials found. Skipping calendar.")
+            print("Warning: GOOGLE_SERVICE_ACCOUNT_JSON missing and service_account.json not found. Skipping calendar.")
             return []
 
         service = build("calendar", "v3", credentials=creds)
@@ -55,8 +46,7 @@ def fetch_calendar_events():
 
         CALENDAR_IDS = [
             "primary",
-            "family17626229456844949933@group.calendar.google.com",
-            # Add any secondary calendar IDs here
+            # Add secondary calendar IDs here if needed
         ]
 
         uk_tz = zoneinfo.ZoneInfo("Europe/London")
@@ -80,14 +70,13 @@ def fetch_calendar_events():
                     raw_start = item["start"].get("dateTime", item["start"].get("date"))
                     raw_end = item["end"].get("dateTime", item["end"].get("date"))
 
-                    # Format start time into UK Local Time (BST/GMT)
                     if "T" in raw_start:
                         dt_start = datetime.fromisoformat(raw_start).astimezone(uk_tz)
                         dt_end = datetime.fromisoformat(raw_end).astimezone(uk_tz)
                         formatted_start = dt_start.strftime("%Y-%m-%d %H:%M")
                         formatted_end = dt_end.strftime("%H:%M")
                     else:
-                        formatted_start = raw_start  # All-day event string
+                        formatted_start = raw_start  # All-day event
                         formatted_end = raw_end
 
                     extracted.append({
@@ -101,40 +90,14 @@ def fetch_calendar_events():
         print(f"Total events fetched across all calendars: {len(extracted)}")
         return extracted
     except Exception as e:
-        print(f"Error initializing calendar service: {e}")
+        print(f"Error fetching calendar: {e}")
         return []
 
 # ==========================================
-# 3. SURF & WEATHER FETCHER
+# 3. AI PROMPT ENGINE (GEMINI)
 # ==========================================
-def fetch_surf_summary():
-    """Fetches Open-Meteo forecast data for Rest Bay."""
-    try:
-        url_marine = f"https://marine-api.open-meteo.com/v1/marine?latitude={LATITUDE}&longitude={LONGITUDE}&hourly=wave_height,wave_period,wave_direction&timezone=Europe/London&forecast_days=7"
-        url_weather = f"https://api.open-meteo.com/v1/forecast?latitude={LATITUDE}&longitude={LONGITUDE}&hourly=wind_speed_10m,wind_direction_10m&timezone=Europe/London&forecast_days=7"
-
-        res_m = requests.get(url_marine, timeout=10).json()
-        res_w = requests.get(url_weather, timeout=10).json()
-
-        today_wave = res_m["hourly"]["wave_height"][12] if "hourly" in res_m and "wave_height" in res_m["hourly"] else 0
-        today_period = res_m["hourly"]["wave_period"][12] if "hourly" in res_m and "wave_period" in res_m["hourly"] else 0
-        today_wind = res_w["hourly"]["wind_speed_10m"][12] if "hourly" in res_w and "wind_speed_10m" in res_w["hourly"] else 0
-        
-        return {
-            "noon_wave_m": today_wave,
-            "noon_wave_ft": round(today_wave * 3.28084, 1) if today_wave else 0,
-            "noon_period": today_period,
-            "noon_wind_kmh": today_wind
-        }
-    except Exception as e:
-        print(f"Error fetching surf: {e}")
-        return {}
-
-# ==========================================
-# 4. AI PROMPT ENGINE (GEMINI)
-# ==========================================
-def generate_ai_briefing(calendar_events, surf_data):
-    """Sends schedule, surf data, and master prompt to Gemini API."""
+def generate_ai_briefing(calendar_events):
+    """Sends schedule and prompt to Gemini API formatted for Telegram HTML."""
     if not GEMINI_API_KEY:
         print("Error: GEMINI_API_KEY missing.")
         return "⚠️ Could not generate briefing: GEMINI_API_KEY missing."
@@ -142,37 +105,37 @@ def generate_ai_briefing(calendar_events, surf_data):
     client = genai.Client(api_key=GEMINI_API_KEY)
     
     events_json_str = json.dumps(calendar_events, indent=2)
-    surf_json_str = json.dumps(surf_data, indent=2)
     is_sunday = datetime.now().weekday() == 6
 
     prompt = f"""
 You are an executive assistant and sports performance assistant. 
-Analyze the user's schedule and surf conditions to produce a clear Telegram update.
+Analyze the user's calendar schedule and produce a clean Telegram daily briefing.
 
 CALENDAR EVENTS (NEXT 7 DAYS):
 {events_json_str}
 
-SURF DATA (REST BAY TODAY AT NOON):
-{surf_json_str}
-
 DAY OF WEEK: {"Sunday" if is_sunday else "Workday/Weekday"}
 
-RULES FOR OUTPUT:
-1. TODAY'S SCHEDULE & CONFLICTS:
-   - Highlight today's events.
-   - Flag conflicts (e.g., Monday 18:00 Tennis vs Tag Rugby). Suggest which to prioritize based on match schedules.
-   - Point out optimal 30-min windows for packing if weekend travel is detected.
+FORMATTING RULES:
+- Strictly use Telegram HTML tag syntax for formatting.
+- Bold titles using <b>text</b>.
+- Italics using <i>text</i>.
+- DO NOT use markdown headers (no ###, no **).
+- DO NOT use raw markdown bullet points with asterisks. Use standard bullet symbols like • or emojis.
 
-2. SURF OUTLOOK:
-   - Summarize Rest Bay conditions based on provided data.
+STRUCTURE:
+1. <b>📅 TODAY'S SCHEDULE & CONFLICTS</b>
+   - Summarize today's events with converted local times.
+   - Flag direct schedule conflicts or tight transitions.
+   - Suggest ideal 30-minute packing/prep windows for travel or upcoming sports sessions.
 
-3. MEAL & FUELING RECOMMENDATION:
-   - Give dinner timing and quick meal recommendations based on sports timings (e.g. high-protein post-workout options for 20:00+ finishes).
+2. <b>🥗 MEAL & FUELING RECOMMENDATION</b>
+   - Suggest dinner timing and high-protein meal options around evening sports/tennis finish times.
 
-4. SUNDAY GROCERY BONUS (ONLY INCLUDE IF TODAY IS SUNDAY):
-   - Provide an itemized grocery shopping list categorized by aisle (Produce, Protein, Dairy, Pantry) based on the upcoming week's schedule constraints.
+3. <b>🛒 SUNDAY GROCERY LIST</b> (ONLY INCLUDE IF DAY OF WEEK IS SUNDAY)
+   - Categorize by aisle: Produce, Protein, Dairy, Pantry.
 
-Keep the formatting clean with standard emojis and clear spacing for text output.
+Keep it concise, clear, and cleanly formatted for mobile reading.
 """
 
     response = client.models.generate_content(
@@ -182,7 +145,7 @@ Keep the formatting clean with standard emojis and clear spacing for text output
     return response.text
 
 # ==========================================
-# 5. TELEGRAM DISPATCHER
+# 4. TELEGRAM DISPATCHER (HTML MODE)
 # ==========================================
 def send_telegram_message(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
@@ -192,8 +155,8 @@ def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": text
-        # parse_mode omitted to prevent strict markdown formatting errors from dropping messages
+        "text": text,
+        "parse_mode": "HTML"
     }
     res = requests.post(url, json=payload, timeout=10)
     print(f"Telegram API response code: {res.status_code}")
@@ -208,11 +171,8 @@ def main():
     print("Fetching Calendar...")
     calendar_events = fetch_calendar_events()
 
-    print("Fetching Surf Data...")
-    surf_data = fetch_surf_summary()
-
     print("Generating AI Briefing...")
-    briefing = generate_ai_briefing(calendar_events, surf_data)
+    briefing = generate_ai_briefing(calendar_events)
 
     print("Sending to Telegram...")
     send_telegram_message(briefing)
