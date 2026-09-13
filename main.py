@@ -46,6 +46,7 @@ def fetch_calendar_events():
 
         CALENDAR_IDS = [
             "primary",
+            "family17626229456844949933@group.calendar.google.com",
             # Add secondary calendar IDs here if needed
         ]
 
