@@ -2,8 +2,20 @@ name: Daily Life Ops Agent
 
 on:
   schedule:
+    # Morning briefing at 06:00 UTC
     - cron: '0 6 * * *'
+    # Evening heads-up at 20:00 UTC
+    - cron: '0 20 * * *'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: 'Briefing Mode'
+        required: true
+        default: 'morning'
+        type: choice
+        options:
+          - morning
+          - evening
 
 jobs:
   run-daily-agent:
@@ -19,10 +31,25 @@ jobs:
       - name: Install Dependencies
         run: pip install -r requirements.txt
 
+      - name: Determine Mode
+        id: set-mode
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "MODE=${{ github.event.inputs.mode }}" >> $GITHUB_OUTPUT
+          else
+            # Check current UTC hour
+            HOUR=$(date -u +%H)
+            if [ "$HOUR" -ge "18" ]; then
+              echo "MODE=evening" >> $GITHUB_OUTPUT
+            else
+              echo "MODE=morning" >> $GITHUB_OUTPUT
+            fi
+          fi
+
       - name: Run Main Script
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
-        run: python main.py
+        run: python main.py --mode ${{ steps.set-mode.outputs.MODE }}
