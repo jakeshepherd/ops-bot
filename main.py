@@ -27,15 +27,23 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 def fetch_calendar_events():
     """Reads the next 7 days of events using service account credentials."""
     service_account_info = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-    if not service_account_info:
-        print("Warning: GOOGLE_SERVICE_ACCOUNT_JSON missing. Skipping calendar.")
-        return []
-
+    
     try:
-        creds_dict = json.loads(service_account_info)
-        creds = Credentials.from_service_account_info(
-            creds_dict, scopes=["https://www.googleapis.com/auth/calendar.readonly"]
-        )
+        if service_account_info:
+            # Loaded directly from environment secret string
+            creds_dict = json.loads(service_account_info)
+            creds = Credentials.from_service_account_info(
+                creds_dict, scopes=["https://www.googleapis.com/auth/calendar.readonly"]
+            )
+        elif os.path.exists("service_account.json"):
+            # Loaded from local file fallback
+            creds = Credentials.from_service_account_file(
+                "service_account.json", scopes=["https://www.googleapis.com/auth/calendar.readonly"]
+            )
+        else:
+            print("Warning: GOOGLE_SERVICE_ACCOUNT_JSON missing and service_account.json not found. Skipping calendar.")
+            return []
+
         service = build("calendar", "v3", credentials=creds)
 
         now = datetime.utcnow()
@@ -80,10 +88,9 @@ def fetch_surf_summary():
         res_m = requests.get(url_marine, timeout=10).json()
         res_w = requests.get(url_weather, timeout=10).json()
 
-        # Simple snippet summary for the prompt
-        today_wave = res_m["hourly"]["wave_height"][12]  # Noon height
-        today_period = res_m["hourly"]["wave_period"][12]
-        today_wind = res_w["hourly"]["wind_speed_10m"][12]
+        today_wave = res_m["hourly"]["wave_height"][12] if "hourly" in res_m and "wave_height" in res_m["hourly"] else 0
+        today_period = res_m["hourly"]["wave_period"][12] if "hourly" in res_m and "wave_period" in res_m["hourly"] else 0
+        today_wind = res_w["hourly"]["wind_speed_10m"][12] if "hourly" in res_w and "wind_speed_10m" in res_w["hourly"] else 0
         
         return {
             "noon_wave_m": today_wave,
@@ -110,7 +117,6 @@ def generate_ai_briefing(calendar_events, surf_data):
     surf_json_str = json.dumps(surf_data, indent=2)
     is_sunday = datetime.now().weekday() == 6
 
-    # --- THIS IS YOUR EMBEDDED PROMPT ---
     prompt = f"""
 You are an executive assistant and sports performance assistant. 
 Analyze the user's schedule and surf conditions to produce a clear Telegram update.
@@ -142,7 +148,7 @@ Keep the formatting clean with bold headings and emojis for Telegram Markdown.
 """
 
     response = client.models.generate_content(
-        model="gemini-1.5-flash",
+        model="gemini-2.5-flash",
         contents=prompt
     )
     return response.text
