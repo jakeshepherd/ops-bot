@@ -25,55 +25,69 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 # 2. GOOGLE CALENDAR FETCHER
 # ==========================================
 def fetch_calendar_events():
-    """Reads the next 7 days of events using service account credentials."""
+    """Reads events from multiple Google Calendars using service account credentials."""
     service_account_info = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     
     try:
         if service_account_info:
-            # Loaded directly from environment secret string
             creds_dict = json.loads(service_account_info)
             creds = Credentials.from_service_account_info(
                 creds_dict, scopes=["https://www.googleapis.com/auth/calendar.readonly"]
             )
         elif os.path.exists("service_account.json"):
-            # Loaded from local file fallback
             creds = Credentials.from_service_account_file(
                 "service_account.json", scopes=["https://www.googleapis.com/auth/calendar.readonly"]
             )
         else:
-            print("Warning: GOOGLE_SERVICE_ACCOUNT_JSON missing and service_account.json not found. Skipping calendar.")
+            print("Warning: No Google credentials found. Skipping calendar.")
             return []
 
         service = build("calendar", "v3", credentials=creds)
 
+        # Set time window starting from midnight today in UTC
         now = datetime.utcnow()
-        time_min = now.isoformat() + "Z"
-        time_max = (now + timedelta(days=7)).isoformat() + "Z"
+        start_of_today = datetime(now.year, now.month, now.day)
+        time_min = start_of_today.strftime('%Y-%m-%dT%H:%M:%SZ')
+        time_max = (start_of_today + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ')
 
-        events_result = (
-            service.events()
-            .list(
-                calendarId="primary",
-                timeMin=time_min,
-                timeMax=time_max,
-                singleEvents=True,
-                orderBy="startTime",
-            )
-            .execute()
-        )
+        # LIST ALL CALENDARS YOU WANT TO CHECK HERE
+        CALENDAR_IDS = [
+            "primary",  # Your main 'Jake Shepherd' calendar
+            "family17626229456844949933@group.calendar.google.com",
+            # "family1234567890@group.calendar.google.com",
+            # "work_calendar_id@group.calendar.google.com",
+        ]
 
         extracted = []
-        for item in events_result.get("items", []):
-            start = item["start"].get("dateTime", item["start"].get("date"))
-            end = item["end"].get("dateTime", item["end"].get("date"))
-            extracted.append({
-                "summary": item.get("summary", "Busy"),
-                "start": start,
-                "end": end
-            })
+        for cal_id in CALENDAR_IDS:
+            try:
+                events_result = (
+                    service.events()
+                    .list(
+                        calendarId=cal_id,
+                        timeMin=time_min,
+                        timeMax=time_max,
+                        singleEvents=True,
+                        orderBy="startTime",
+                    )
+                    .execute()
+                )
+                for item in events_result.get("items", []):
+                    start = item["start"].get("dateTime", item["start"].get("date"))
+                    end = item["end"].get("dateTime", item["end"].get("date"))
+                    extracted.append({
+                        "calendar": cal_id,
+                        "summary": item.get("summary", "Busy"),
+                        "start": start,
+                        "end": end
+                    })
+            except Exception as cal_err:
+                print(f"Error fetching calendar '{cal_id}': {cal_err}")
+
+        print(f"Total events fetched across all calendars: {len(extracted)}")
         return extracted
     except Exception as e:
-        print(f"Error fetching calendar: {e}")
+        print(f"Error initializing calendar service: {e}")
         return []
 
 # ==========================================
