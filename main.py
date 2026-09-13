@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import argparse
 from datetime import datetime, timedelta
 import zoneinfo
 import requests
@@ -97,7 +98,7 @@ def fetch_calendar_events():
 # ==========================================
 # 3. AI PROMPT ENGINE (GEMINI)
 # ==========================================
-def generate_ai_briefing(calendar_events):
+def generate_ai_briefing(calendar_events, mode="morning"):
     """Sends schedule and prompt to Gemini API formatted for Telegram HTML."""
     if not GEMINI_API_KEY:
         print("Error: GEMINI_API_KEY missing.")
@@ -108,7 +109,30 @@ def generate_ai_briefing(calendar_events):
     events_json_str = json.dumps(calendar_events, indent=2)
     is_sunday = datetime.now().weekday() == 6
 
-    prompt = f"""
+    if mode == "evening":
+        prompt = f"""
+You are an executive assistant for JAKE giving a brief, high-level evening heads-up for TOMORROW.
+
+CALENDAR EVENTS (NEXT 7 DAYS):
+{events_json_str}
+
+CONTEXT & RULES:
+1. USER IDENTITY: Jake.
+2. EVENT OWNERSHIP: Events labeled starting with "Amy" belong to Amy and do NOT constrain Jake's schedule unless explicitly tagged for both.
+3. FOCUS: Look specifically at tomorrow's events.
+4. FORMATTING: Strictly use Telegram HTML (<b>bold</b>, <i>italics</i>, emojis/bullets). No markdown headings or asterisks.
+
+STRUCTURE:
+1. <b>🌙 TOMORROW'S HEADS-UP</b>
+   - Bullet list of tomorrow's key commitments (e.g. garage appointments, early coaching, travel).
+   - Point out anything that requires evening prep TONIGHT (e.g., packing gear, arranging keys, setting early alarms).
+2. <b>⚡ QUICK FUELING NOTE</b>
+   - Brief 1-sentence note on tomorrow evening's sports/dinner timing if relevant.
+
+Keep it short, direct, and under 15 lines.
+"""
+    else:  # Morning mode
+        prompt = f"""
 You are an executive assistant and sports performance assistant for JAKE. 
 Analyze the calendar schedule and produce a clean Telegram daily briefing.
 
@@ -118,11 +142,11 @@ CALENDAR EVENTS (NEXT 7 DAYS):
 DAY OF WEEK: {"Sunday" if is_sunday else "Workday/Weekday"}
 
 CONTEXT & CONFLICT RULES:
-1. USER IDENTITY: The user is Jake.
+1. USER IDENTITY: Jake.
 2. EVENT OWNERSHIP: 
-   - Events labeled starting with "Amy" (or involving Amy's solo travel, like "Amy Exeter") belong to Amy and do NOT constrain Jake's local schedule.
-   - Do NOT flag parallel events as conflicts if one is Amy's solo activity and the other is Jake's (e.g., Jake doing tennis while Amy is in Exeter is NOT a conflict).
-   - Only flag direct conflicts if JAKE has two overlapping events, or if an event explicitly involves BOTH of them (e.g., "Both - Bristol seeing parents").
+   - Events labeled starting with "Amy" belong to Amy and do NOT constrain Jake's local schedule.
+   - Do NOT flag parallel events as conflicts if one is Amy's solo activity and the other is Jake's.
+   - Only flag direct conflicts if JAKE has two overlapping events, or if an event explicitly involves BOTH.
 
 FORMATTING RULES:
 - Strictly use Telegram HTML tag syntax for formatting.
@@ -137,7 +161,7 @@ STRUCTURE:
    - Flag legitimate conflicts for Jake or tight prep/travel windows.
 
 2. <b>🥗 MEAL & FUELING RECOMMENDATION</b>
-   - Suggest dinner timing and high-protein meal options based on Jake's athletic finishes (e.g., late dinners for 20:00+ sports finishes).
+   - Suggest dinner timing and high-protein meal options based on Jake's athletic finishes.
 
 3. <b>🛒 SUNDAY GROCERY LIST</b> (ONLY INCLUDE IF DAY OF WEEK IS SUNDAY)
    - Categorize by aisle: Produce, Protein, Dairy, Pantry based on the week ahead.
@@ -175,11 +199,16 @@ def send_telegram_message(text):
 # MAIN EXECUTION
 # ==========================================
 def main():
+    parser = argparse.ArgumentParser(description="Life Ops Briefing Agent")
+    parser.add_argument("--mode", choices=["morning", "evening"], default="morning", help="Mode of the briefing")
+    args = parser.parse_args()
+
+    print(f"Running in {args.mode.upper()} mode...")
     print("Fetching Calendar...")
     calendar_events = fetch_calendar_events()
 
     print("Generating AI Briefing...")
-    briefing = generate_ai_briefing(calendar_events)
+    briefing = generate_ai_briefing(calendar_events, mode=args.mode)
 
     print("Sending to Telegram...")
     send_telegram_message(briefing)
