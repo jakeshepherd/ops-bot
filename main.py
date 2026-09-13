@@ -44,10 +44,10 @@ def fetch_calendar_events():
         time_min = start_of_today.isoformat()
         time_max = (start_of_today + timedelta(days=7)).isoformat()
 
+        # LIST OF CALENDARS TO MONITOR
         CALENDAR_IDS = [
-            "primary",
-            "family17626229456844949933@group.calendar.google.com",
-            # Add secondary calendar IDs here if needed
+            "primary",  # Your main 'Jake Shepherd' calendar
+            "family17626229456844949933@group.calendar.google.com",  # Shared Family Calendar
         ]
 
         uk_tz = zoneinfo.ZoneInfo("Europe/London")
@@ -109,13 +109,20 @@ def generate_ai_briefing(calendar_events):
     is_sunday = datetime.now().weekday() == 6
 
     prompt = f"""
-You are an executive assistant and sports performance assistant. 
-Analyze the user's calendar schedule and produce a clean Telegram daily briefing.
+You are an executive assistant and sports performance assistant for JAKE. 
+Analyze the calendar schedule and produce a clean Telegram daily briefing.
 
 CALENDAR EVENTS (NEXT 7 DAYS):
 {events_json_str}
 
 DAY OF WEEK: {"Sunday" if is_sunday else "Workday/Weekday"}
+
+CONTEXT & CONFLICT RULES:
+1. USER IDENTITY: The user is Jake.
+2. EVENT OWNERSHIP: 
+   - Events labeled starting with "Amy" (or involving Amy's solo travel, like "Amy Exeter") belong to Amy and do NOT constrain Jake's local schedule.
+   - Do NOT flag parallel events as conflicts if one is Amy's solo activity and the other is Jake's (e.g., Jake doing tennis while Amy is in Exeter is NOT a conflict).
+   - Only flag direct conflicts if JAKE has two overlapping events, or if an event explicitly involves BOTH of them (e.g., "Both - Bristol seeing parents").
 
 FORMATTING RULES:
 - Strictly use Telegram HTML tag syntax for formatting.
@@ -125,16 +132,15 @@ FORMATTING RULES:
 - DO NOT use raw markdown bullet points with asterisks. Use standard bullet symbols like • or emojis.
 
 STRUCTURE:
-1. <b>📅 TODAY'S SCHEDULE & CONFLICTS</b>
-   - Summarize today's events with converted local times.
-   - Flag direct schedule conflicts or tight transitions.
-   - Suggest ideal 30-minute packing/prep windows for travel or upcoming sports sessions.
+1. <b>📅 TODAY'S SCHEDULE</b>
+   - Summarize Jake's events today with converted local times.
+   - Flag legitimate conflicts for Jake or tight prep/travel windows.
 
 2. <b>🥗 MEAL & FUELING RECOMMENDATION</b>
-   - Suggest dinner timing and high-protein meal options around evening sports/tennis finish times.
+   - Suggest dinner timing and high-protein meal options based on Jake's athletic finishes (e.g., late dinners for 20:00+ sports finishes).
 
 3. <b>🛒 SUNDAY GROCERY LIST</b> (ONLY INCLUDE IF DAY OF WEEK IS SUNDAY)
-   - Categorize by aisle: Produce, Protein, Dairy, Pantry.
+   - Categorize by aisle: Produce, Protein, Dairy, Pantry based on the week ahead.
 
 Keep it concise, clear, and cleanly formatted for mobile reading.
 """
