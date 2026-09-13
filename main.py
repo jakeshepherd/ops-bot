@@ -148,7 +148,7 @@ Keep the formatting clean with standard emojis and clear spacing for text output
 """
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model="gemini-3.6-flash",
         contents=prompt
     )
     return response.text
