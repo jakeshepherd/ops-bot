@@ -24,8 +24,11 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 # ==========================================
 # 2. GOOGLE CALENDAR FETCHER
 # ==========================================
+from datetime import datetime, timedelta
+import zoneinfo
+
 def fetch_calendar_events():
-    """Reads events from multiple Google Calendars using service account credentials."""
+    """Reads events from multiple Google Calendars and converts times to UK Local Time."""
     service_account_info = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     
     try:
@@ -44,21 +47,21 @@ def fetch_calendar_events():
 
         service = build("calendar", "v3", credentials=creds)
 
-        # Set time window starting from midnight today in UTC
-        now = datetime.utcnow()
-        start_of_today = datetime(now.year, now.month, now.day)
-        time_min = start_of_today.strftime('%Y-%m-%dT%H:%M:%SZ')
-        time_max = (start_of_today + timedelta(days=7)).strftime('%Y-%m-%dT%H:%M:%SZ')
+        # Set search window for next 7 days in UTC
+        now_utc = datetime.now(zoneinfo.ZoneInfo("UTC"))
+        start_of_today = now_utc.replace(hour=0, minute=0, second=0, microsecond=0)
+        time_min = start_of_today.isoformat()
+        time_max = (start_of_today + timedelta(days=7)).isoformat()
 
-        # LIST ALL CALENDARS YOU WANT TO CHECK HERE
         CALENDAR_IDS = [
-            "primary",  # Your main 'Jake Shepherd' calendar
+            "primary",
             "family17626229456844949933@group.calendar.google.com",
-            # "family1234567890@group.calendar.google.com",
-            # "work_calendar_id@group.calendar.google.com",
+            # Add any secondary calendar IDs here
         ]
 
+        uk_tz = zoneinfo.ZoneInfo("Europe/London")
         extracted = []
+
         for cal_id in CALENDAR_IDS:
             try:
                 events_result = (
@@ -72,14 +75,25 @@ def fetch_calendar_events():
                     )
                     .execute()
                 )
+                
                 for item in events_result.get("items", []):
-                    start = item["start"].get("dateTime", item["start"].get("date"))
-                    end = item["end"].get("dateTime", item["end"].get("date"))
+                    raw_start = item["start"].get("dateTime", item["start"].get("date"))
+                    raw_end = item["end"].get("dateTime", item["end"].get("date"))
+
+                    # Format start time into UK Local Time (BST/GMT)
+                    if "T" in raw_start:
+                        dt_start = datetime.fromisoformat(raw_start).astimezone(uk_tz)
+                        dt_end = datetime.fromisoformat(raw_end).astimezone(uk_tz)
+                        formatted_start = dt_start.strftime("%Y-%m-%d %H:%M")
+                        formatted_end = dt_end.strftime("%H:%M")
+                    else:
+                        formatted_start = raw_start  # All-day event string
+                        formatted_end = raw_end
+
                     extracted.append({
-                        "calendar": cal_id,
                         "summary": item.get("summary", "Busy"),
-                        "start": start,
-                        "end": end
+                        "start": formatted_start,
+                        "end": formatted_end
                     })
             except Exception as cal_err:
                 print(f"Error fetching calendar '{cal_id}': {cal_err}")
